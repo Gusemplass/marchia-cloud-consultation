@@ -1,4 +1,4 @@
-#import pandas as pd
+import pandas as pd
 import os
 
 def parse_dpgf_excel(folder):
@@ -10,4 +10,4 @@ def parse_dpgf_excel(folder):
                 return df.fillna("").to_dict(orient="records")
             except Exception as e:
                 print(f"Erreur lecture DPGF : {e}")
-    return [] Lecture DPGF
+    return []
