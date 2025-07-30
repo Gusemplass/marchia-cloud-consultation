@@ -1,59 +1,36 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
+from docx import Document
+import uuid
 import os
-import shutil
 
-from utils.extract_zip import extract_zip_content
-from utils.parse_cctp import extract_cctp_data
-from utils.parse_dpgf import parse_dpgf_excel
-from utils.extract_visuels import extract_images_from_pdf
-from utils.generate_word import generate_consultation_doc
-from utils.marchia_post import envoyer_donnees_fiche_marchia
-from utils.fiche_generator import extraire_descriptif_cctp, lire_lignes_dpgf
+app = FastAPI()
 
-app = FastAPI()  # ← Entrypoint FastAPI
+class FicheRequest(BaseModel):
+    nom_chantier: str
+    type_travaux: str
+    produit: str
+    descriptif: str
 
-# 📥 Route existante : traitement à partir d’un ZIP
-@app.post("/upload")
-async def upload_zip(zip_file: UploadFile = File(...)):
-    upload_dir = "temp"
-    os.makedirs(upload_dir, exist_ok=True)
+@app.post("/genere-fiche")
+def genere_fiche(data: FicheRequest):
+    template_path = "fiche_template.docx"
+    doc = Document(template_path)
 
-    zip_path = os.path.join(upload_dir, "input.zip")
-    with open(zip_path, "wb") as buffer:
-        shutil.copyfileobj(zip_file.file, buffer)
+    # Remplacements simples dans les paragraphes
+    for p in doc.paragraphs:
+        if "NOM DE CHANTIER" in p.text:
+            p.text = p.text.replace("NOM DE CHANTIER", data.nom_chantier)
+        if "réhabilitation / neuf" in p.text:
+            p.text = p.text.replace("réhabilitation / neuf", data.type_travaux)
+        if "produit suivant" in p.text:
+            p.text = p.text.replace("produit suivant", data.produit)
+        if "📎 Descriptif issu du CCTP ou DPGF à compléter ci-après :" in p.text:
+            p.add_run("\n" + data.descriptif)
 
-    extract_zip_content(zip_path, upload_dir)
+    filename = f"fiche_{uuid.uuid4().hex[:8]}.docx"
+    output_path = f"/tmp/{filename}"
+    doc.save(output_path)
 
-    cctp_data = extract_cctp_data(upload_dir)
-    dpgf_data = parse_dpgf_excel(upload_dir)
-    visuel_paths = extract_images_from_pdf(upload_dir)
-
-    output_path = "fiche_consultation_output.docx"
-    generate_consultation_doc(
-        template_path="model/ddp_GMMARCH-IAV2.docx",
-        output_path=output_path,
-        chantier=cctp_data["chantier"],
-        descriptif=cctp_data["descriptif"],
-        tableau=dpgf_data,
-        visuels=visuel_paths
-    )
-
-    return FileResponse(output_path, filename="fiche_consultation.docx")
-
-# ⚡ Nouveau : envoie automatique vers mex-supervision
-@app.post("/analyse-et-envoie")
-def analyse_et_envoie():
-    cctp_path = "temp/CCTP_Lot_5.pdf"
-    dpgf_path = "temp/DPGF_Lot_5.xlsx"
-
-    descriptif = extraire_descriptif_cctp(cctp_path)
-    tableau = lire_lignes_dpgf(dpgf_path)
-
-    envoyer_donnees_fiche_marchia(
-        nom_chantier="TEST AUTO – Le Confluent",
-        descriptif=descriptif,
-        tableau_quantitatif=tableau
-    )
-
-    return {"status": "OK", "detail": "Analyse faite et fiche envoyée automatiquement"}
+    return FileResponse(path=output_path, filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
