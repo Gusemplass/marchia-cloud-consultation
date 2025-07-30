@@ -1,8 +1,4 @@
 fastapi==0.111.0
 uvicorn==0.29.0
 python-docx==1.1.0
-pandas==2.2.2
-openpyxl==3.1.2
-pdfplumber==0.10.4
-pymupdf==1.22.5
-fitz==0.0.1.dev2  # Stub pour compatibilité PyMuPDF
+pandas==2.1.4
