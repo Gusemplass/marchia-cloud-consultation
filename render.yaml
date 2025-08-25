@@ -1,9 +1,7 @@
 services:
   - type: web
-    name: marchia-cloud-consultation
+    name: marchia-cloud
     env: python
-    buildCommand: |
-      echo "🐍 Forçage Python 3.11 depuis runtime.txt"
-      cat runtime.txt
-      pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port 7860
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    plan: free
