@@ -1,2 +1,10 @@
-web: uvicorn main:app --host 0.0.0.0 --port 10000
+services:
+  - type: web
+    name: marchia-cloud-consultation
+    env: python
+    plan: free
+    region: oregon
+    pythonVersion: 3.11.9
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
 
