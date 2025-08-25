@@ -1,36 +1,84 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from fastapi.responses import FileResponse
-from docx import Document
-import uuid
+# -*- coding: utf-8 -*-
 import os
+import asyncio
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-app = FastAPI()
+# Import des agents
+from agents import (
+    a1_extract,
+    a2_cctp,
+    a3_plans,
+    a4_rc_ccap,
+    a5_dpgf,
+    a6_livrables,
+    a7_amiante
+)
 
-class FicheRequest(BaseModel):
-    nom_chantier: str
-    type_travaux: str
-    produit: str
-    descriptif: str
+app = FastAPI(title="LucidIA – Multi-Agents DCE")
 
-@app.post("/genere-fiche")
-def genere_fiche(data: FicheRequest):
-    template_path = "fiche_template.docx"
-    doc = Document(template_path)
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    # Remplacements simples dans les paragraphes
-    for p in doc.paragraphs:
-        if "NOM DE CHANTIER" in p.text:
-            p.text = p.text.replace("NOM DE CHANTIER", data.nom_chantier)
-        if "réhabilitation / neuf" in p.text:
-            p.text = p.text.replace("réhabilitation / neuf", data.type_travaux)
-        if "produit suivant" in p.text:
-            p.text = p.text.replace("produit suivant", data.produit)
-        if "📎 Descriptif issu du CCTP ou DPGF à compléter ci-après :" in p.text:
-            p.add_run("\n" + data.descriptif)
+# -------- MODELE REPONSE --------
+class JobResponse(BaseModel):
+    job_id: str
+    status: str
+    files: list
 
-    filename = f"fiche_{uuid.uuid4().hex[:8]}.docx"
-    output_path = f"/tmp/{filename}"
-    doc.save(output_path)
+# -------- 1. UPLOAD --------
+@app.post("/upload-url", response_model=JobResponse)
+def upload_url(file_url: str):
+    """Télécharge un ZIP depuis une URL, l'extrait, retourne job_id + liste fichiers"""
+    job_id, files = a1_extract.download_and_extract(file_url, UPLOAD_DIR)
+    return {"job_id": job_id, "status": "uploaded", "files": files}
 
-    return FileResponse(path=output_path, filename=filename, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+# -------- 2. ANALYSE (ASYNC) --------
+@app.post("/analyze/{job_id}")
+async def analyze_job(job_id: str):
+    """Orchestre A2–A5 (+A7 si amiante), puis lance A6"""
+    docstore = a1_extract.build_docstore(job_id, upload_dir=UPLOAD_DIR)
+
+    # Création des tâches en parallèle
+    tasks = [
+        asyncio.create_task(async_analyze(a2_cctp.analyze, docstore, "CCTP")),
+        asyncio.create_task(async_analyze(a3_plans.analyze, docstore, "Plans")),
+        asyncio.create_task(async_analyze(a4_rc_ccap.analyze, docstore, "RC_CCAP")),
+        asyncio.create_task(async_analyze(a5_dpgf.analyze, docstore, "DPGF")),
+    ]
+
+    # Ajouter A7 Amiante si pertinent
+    if "amiante" in " ".join(docstore["files"]).lower() or "amiante" in docstore["doc_text"].lower():
+        tasks.append(asyncio.create_task(async_analyze(a7_amiante.analyze, docstore, "Amiante")))
+
+    # Exécution parallèle
+    results_list = await asyncio.gather(*tasks)
+
+    # Fusion résultats
+    results = {}
+    for r in results_list:
+        results.update(r)
+
+    # Consolidation livrables
+    livrables = a6_livrables.generate(results, job_id, upload_dir=UPLOAD_DIR)
+
+    return {"job_id": job_id, "results": results, "livrables": livrables}
+
+# -------- 3. RESULT --------
+@app.get("/jobs/{job_id}/result")
+def get_result(job_id: str):
+    """Retourne le contenu final JSON (livrables, liens Word/Notion)"""
+    path = os.path.join(UPLOAD_DIR, job_id, "result.json")
+    if not os.path.exists(path):
+        raise HTTPException(404, "Resultat non trouvé")
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+# -------- UTILITAIRE --------
+async def async_analyze(func, docstore, label):
+    """Wrapper async pour exécuter un agent"""
+    try:
+        res = func(docstore)
+        return {label: res}
+    except Exception as e:
+        return {label: {"error": str(e)}}
