@@ -26,6 +26,15 @@ class JobResponse(BaseModel):
     status: str
     files: list
 
+# -------- 0. ROOT & HEALTHZ --------
+@app.get("/")
+def root():
+    return {"status": "running", "message": "LucidIA API is live 🚀"}
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
+
 # -------- 1. UPLOAD --------
 @app.post("/upload-url", response_model=JobResponse)
 def upload_url(file_url: str):
@@ -48,43 +57,7 @@ async def analyze_job(job_id: str):
     ]
 
     # Ajouter A7 Amiante si pertinent
-    if "amiante" in " ".join(docstore["files"]).lower() or "amiante" in docstore["doc_text"].lower():
-        tasks.append(asyncio.create_task(async_analyze(a7_amiante.analyze, docstore, "Amiante")))
-
-    # Exécution parallèle
-    results_list = await asyncio.gather(*tasks)
-
-    # Fusion résultats
-    results = {}
-    for r in results_list:
-        results.update(r)
-
-    # Consolidation livrables
-    livrables = a6_livrables.generate(results, job_id, upload_dir=UPLOAD_DIR)
-
-    return {"job_id": job_id, "results": results, "livrables": livrables}
-
-# -------- 3. RESULT --------
-@app.get("/jobs/{job_id}/result")
-def get_result(job_id: str):
-    """Retourne le contenu final JSON (livrables, liens Word/Notion)"""
-    path = os.path.join(UPLOAD_DIR, job_id, "result.json")
-    if not os.path.exists(path):
-        raise HTTPException(404, "Resultat non trouvé")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-# -------- UTILITAIRE --------
-async def async_analyze(func, docstore, label):
-    """Wrapper async pour exécuter un agent"""
-    try:
-        res = func(docstore)
-        return {label: res}
-    except Exception as e:
-        return {label: {"error": str(e)}}
-        @app.get("/")
-def root():
-    return {"status": "running", "message": "LucidIA API is live 🚀"}
+    if "amiante" in " ".join(docstore["files"]).lower() or "amiante" i
 
 @app.get("/healthz")
 def healthz():
