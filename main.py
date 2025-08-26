@@ -1,42 +1,50 @@
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import tempfile
+from io import BytesIO
 from docx import Document
+from fastapi.responses import StreamingResponse
 
 app = FastAPI()
 
-# Root = healthcheck
-@app.get("/")
-def read_root():
-    return {"message": "🚀 Marchia Cloud Consultation en ligne !"}
-
-# Modèle attendu pour l’endpoint
 class FicheRequest(BaseModel):
     projet: str
     moa: str
     lot: str
-    descriptif: str | None = None
+    descriptif: str
 
-# Endpoint pour générer une fiche Word
+@app.get("/")
+def root():
+    return {"message": "🚀 Marchia Cloud Consultation en ligne !"}
+
 @app.post("/genere-fiche")
-async def genere_fiche(request: FicheRequest):
-    # Création du document Word
+def genere_fiche(req: FicheRequest):
+    # --- Génération DOCX en mémoire ---
     doc = Document()
-    doc.add_heading(f"Fiche Consultation - {request.projet}", level=1)
-    doc.add_paragraph(f"Maître d’ouvrage : {request.moa}")
-    doc.add_paragraph(f"Lot concerné : {request.lot}")
-    if request.descriptif:
-        doc.add_paragraph(f"Descriptif : {request.descriptif}")
+    doc.add_heading(f"Fiche consultation – {req.projet}", level=1)
+    doc.add_paragraph(f"Maître d’ouvrage : {req.moa}")
+    doc.add_paragraph(f"Lot : {req.lot}")
+    doc.add_paragraph("Descriptif :")
+    doc.add_paragraph(req.descriptif)
 
-    # Sauvegarde temporaire
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-    doc.save(tmp.name)
+    # Mini tableau type pour rassurer Word (structure non vide)
+    table = doc.add_table(rows=1, cols=6)
+    hdr = table.rows[0].cells
+    hdr[0].text = "Réf."
+    hdr[1].text = "Dim."
+    hdr[2].text = "Typo"
+    hdr[3].text = "Perf."
+    hdr[4].text = "Qté"
+    hdr[5].text = "Pose"
 
-    # Envoi du fichier Word
-    return FileResponse(
-        tmp.name,
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    filename = f"fiche_{req.projet.replace(' ', '_')}.docx"
+    return StreamingResponse(
+        buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"fiche_{request.projet.replace(' ', '_')}.docx"
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
 
