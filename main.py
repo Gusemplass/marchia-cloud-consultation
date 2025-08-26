@@ -57,8 +57,11 @@ async def analyze_job(job_id: str):
     ]
 
     # Ajouter A7 Amiante si pertinent
-    if "amiante" in " ".join(docstore["files"]).lower() or "amiante" in docstore["doc_text"].lower():
-    tasks.append(asyncio.create_task(async_analyze(a7_amiante.analyze, docstore, "Amiante")))
+    # Vérifie si le mot "amiante" apparaît dans les fichiers ou dans le texte
+if ("amiante" in " ".join(docstore.get("files", [])).lower() 
+        or "amiante" in " ".join(docstore.get("text", [])).lower()):
+    # ton traitement ici
+    pass
 
 @app.get("/healthz")
 def healthz():
