@@ -82,3 +82,10 @@ async def async_analyze(func, docstore, label):
         return {label: res}
     except Exception as e:
         return {label: {"error": str(e)}}
+        @app.get("/")
+def root():
+    return {"status": "running", "message": "LucidIA API is live 🚀"}
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
