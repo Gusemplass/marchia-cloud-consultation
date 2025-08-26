@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, Query
 from pydantic import BaseModel
 from io import BytesIO
 from docx import Document
-from fastapi.responses import StreamingResponse
+import sys
+
+__VERSION__ = "2025-08-26-1"
 
 app = FastAPI()
 
@@ -14,11 +16,20 @@ class FicheRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "🚀 Marchia Cloud Consultation en ligne !"}
+    return {"message": "🚀 Marchia Cloud Consultation en ligne !", "version": __VERSION__}
 
 @app.post("/genere-fiche")
-def genere_fiche(req: FicheRequest):
-    # --- Génération DOCX en mémoire ---
+def genere_fiche(
+    req: FicheRequest,
+    format: str = Query("docx", pattern="^(docx|json)$")
+):
+    print(f"[genere_fiche] format={format} | projet={req.projet}", file=sys.stdout, flush=True)
+
+    # 🔍 Mode debug JSON si demandé
+    if format == "json":
+        return {"status": "ok", "message": "Fiche reçue correctement ✅", "data": req.model_dump()}
+
+    # 📝 Génération DOCX en mémoire
     doc = Document()
     doc.add_heading(f"Fiche consultation – {req.projet}", level=1)
     doc.add_paragraph(f"Maître d’ouvrage : {req.moa}")
@@ -26,25 +37,21 @@ def genere_fiche(req: FicheRequest):
     doc.add_paragraph("Descriptif :")
     doc.add_paragraph(req.descriptif)
 
-    # Mini tableau type pour rassurer Word (structure non vide)
     table = doc.add_table(rows=1, cols=6)
     hdr = table.rows[0].cells
-    hdr[0].text = "Réf."
-    hdr[1].text = "Dim."
-    hdr[2].text = "Typo"
-    hdr[3].text = "Perf."
-    hdr[4].text = "Qté"
-    hdr[5].text = "Pose"
+    hdr[0].text = "Réf."; hdr[1].text = "Dim."; hdr[2].text = "Typo"
+    hdr[3].text = "Perf."; hdr[4].text = "Qté"; hdr[5].text = "Pose"
 
     buf = BytesIO()
     doc.save(buf)
-    buf.seek(0)
+    content = buf.getvalue()
 
     filename = f"fiche_{req.projet.replace(' ', '_')}.docx"
-    return StreamingResponse(
-        buf,
+    return Response(
+        content=content,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
 
 
