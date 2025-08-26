@@ -1,3 +1,38 @@
+from docx.text.paragraph import Paragraph
+from docx.table import Table
+from docx.shared import Pt
+from docx.enum.text import WD_BREAK
+
+def remove_paragraph(p: Paragraph):
+    p._element.getparent().remove(p._element)
+
+def move_table_after_paragraph(table: Table, paragraph: Paragraph):
+    tbl = table._tbl
+    parent = tbl.getparent()
+    parent.remove(tbl)
+    paragraph._p.addnext(tbl)
+
+def block_items(doc: Document):
+    body = doc._element.body
+    from docx.oxml.text.paragraph import CT_P
+    from docx.oxml.table import CT_Tbl
+    for child in body.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, doc)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, doc)
+
+def clear_table_body_keep_header(table: Table):
+    while len(table.rows) > 1:
+        table._tbl.remove(table.rows[1]._tr)
+
+def zero_cell_spacing(table: Table):
+    for row in table.rows:
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                pf = p.paragraph_format
+                pf.space_before = Pt(0)
+                pf.space_after = Pt(0)
 from fastapi import FastAPI, Response, Query
 from pydantic import BaseModel
 from typing import List, Optional
