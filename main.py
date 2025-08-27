@@ -9,11 +9,7 @@ from docx.table import Table
 from docx.enum.text import WD_BREAK
 from docx.shared import Pt
 
-<<<<<<< HEAD
-__VERSION__ = "2025-08-27-2"
-=======
-__VERSION__ = "2025-08-26-4"  # <â€” bump version pour vÃ©rifier
->>>>>>> 9986ffe (feat(V3): Calibri 11 + page break + clear table (2025-08-26-4))
+__VERSION__ = "2025-08-27-6"
 TEMPLATE_PATH = "templates/fiche_demo_MARCHIA_full.docx"
 
 app = FastAPI()
@@ -44,11 +40,7 @@ def find_paragraph(doc: Document, needles: List[str]) -> Optional[Paragraph]:
     return None
 
 def block_items(doc: Document):
-<<<<<<< HEAD
     """Yield Paragraph/Table dans l'ordre d'apparition (de haut en bas)."""
-=======
-    """ItÃ¨re paragraphes et tableaux dans l'ordre d'apparition."""
->>>>>>> 9986ffe (feat(V3): Calibri 11 + page break + clear table (2025-08-26-4))
     body = doc._element.body
     from docx.oxml.text.paragraph import CT_P
     from docx.oxml.table import CT_Tbl
@@ -83,10 +75,9 @@ def zero_cell_spacing(table: Table):
 
 def cleanup_after_header(header_par: Paragraph, doc: Document) -> Optional[Table]:
     """
-    Dès l'en-tête placé, supprime les paragraphes vides ET
-    les lignes 'étiquettes' (📌Rép., 📐Dim., 🧩Typo., 🎯, 🏷, 🔧, 🧾)
-    jusqu'au premier tableau ou un paragraphe utile.
-    Retourne le premier tableau trouvé (si présent).
+    Après l'en-tête, supprime paragraphes vides et étiquettes individuelles
+    (📌Rép., 📐Dim., 🧩Typo., 🎯, 🏷, 🔧, 🧾) jusqu'au premier tableau ou un contenu utile.
+    Retourne le premier tableau trouvé si présent.
     """
     tokens = ["📌Rép.", "📐Dim.", "🧩Typo.", "🎯", "🏷", "🔧", "🧾"]
     items = list(block_items(doc))
@@ -109,7 +100,6 @@ def cleanup_after_header(header_par: Paragraph, doc: Document) -> Optional[Table
                 items.pop(j)
                 continue
             else:
-                # On s'arrête dès qu'on tombe sur un vrai contenu non-table
                 break
         j += 1
     return first_table
@@ -117,12 +107,12 @@ def cleanup_after_header(header_par: Paragraph, doc: Document) -> Optional[Table
 # ---------- Routes ----------
 @app.get("/")
 def root():
-    return {"message": "ðŸš€ Marchia Cloud Consultation en ligne !", "version": __VERSION__}
+    return {"message": "Marchia Cloud Consultation en ligne", "version": __VERSION__}
 
 @app.post("/genere-fiche")
 def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|json)$")):
     if format == "json":
-        return {"status": "ok", "message": "Fiche reÃ§ue correctement âœ…", "data": req.model_dump()}
+        return {"status": "ok", "message": "Fiche reçue correctement", "data": req.model_dump()}
 
     # 1) Charger le modèle
     doc = Document(TEMPLATE_PATH)
@@ -149,36 +139,21 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
     if p_desc:
         p_desc.text = req.descriptif
 
-<<<<<<< HEAD
     # 5) Tableau quantitatif : en-tête + nettoyage + tableau en haut de page 2
-=======
-    # Tableau : essaie de remplir celui qui se trouve juste aprÃ¨s le marqueur.
->>>>>>> 9986ffe (feat(V3): Calibri 11 + page break + clear table (2025-08-26-4))
     p_tbl = find_paragraph(doc, ["[[TABLEAU_QUANTITATIF]]", "{{TABLEAU_QUANTITATIF}}"])
     if p_tbl and req.lignes:
         header_text = "📌Rép. 📐Dim. 🧩Typo. 🎯 (Rw+Ctr/Uw) 🏷Qté 🔧pose (applique/réno/tableau/feuillure) 🧾Commentaire"
 
-<<<<<<< HEAD
         # 5a) Saut de page + transformation du marqueur en en-tête (une seule ligne)
         p_tbl.text = ""
         run = p_tbl.add_run()
         run.add_break(WD_BREAK.PAGE)
         run.add_text(header_text)
         header_par = p_tbl
-=======
-        # 2) Cherche le "prochain bloc" aprÃ¨s ce paragraphe : si c'est un Table, on le remplit
-        items = list(block_items(doc))
-        # trouve l'index du paragraphe
-        try:
-            idx = next(i for i, it in enumerate(items) if isinstance(it, Paragraph) and it._p is p_tbl._p)
-        except StopIteration:
-            idx = None
->>>>>>> 9986ffe (feat(V3): Calibri 11 + page break + clear table (2025-08-26-4))
 
-        # 5b) Nettoyer tout ce qui traîne juste après (étiquettes individuelles + vides)
+        # 5b) Nettoyer ce qui suit immédiatement (étiquettes individuelles + vides)
         existing_table = cleanup_after_header(header_par, doc)
 
-<<<<<<< HEAD
         headers = ["Rép.", "Dim.", "Typo.", "Perf. (Uw / Rw+Ctr)", "Qté", "Pose", "Commentaire"]
 
         if existing_table is None:
@@ -193,22 +168,9 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
             dest_table = existing_table
             move_table_after_paragraph(dest_table, header_par)
             clear_table_body_keep_header(dest_table)
-            # uniformiser l'en-tête
             hdr = dest_table.rows[0].cells
             for i, h in enumerate(headers[:len(hdr)]):
                 hdr[i].text = h
-=======
-        if dest_table is None:
-            # pas de tableau aprÃ¨s le marqueur â†’ on en crÃ©e un et on l'insÃ¨re "ici"
-            dest_table = doc.add_table(rows=1, cols=7)
-            hdr = dest_table.rows[0].cells
-            hdr[0].text = "RÃ©p."; hdr[1].text = "Dim."; hdr[2].text = "Typo."
-            hdr[3].text = "Perf."; hdr[4].text = "QtÃ©"; hdr[5].text = "Pose"; hdr[6].text = "Commentaire"
-            p_tbl._p.addnext(dest_table._tbl)
-        else:
-            # s'il existe dÃ©jÃ  un header dans ton modÃ¨le, on peut l'Ã©craser/laisser tel quel.
-            pass
->>>>>>> 9986ffe (feat(V3): Calibri 11 + page break + clear table (2025-08-26-4))
 
         # 5e) Remplir les lignes
         for L in req.lignes:
@@ -221,11 +183,7 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
             row[5].text = L.pose
             row[6].text = (L.commentaire or "").strip()
 
-<<<<<<< HEAD
         # 5f) Style & espacement
-=======
-        # (option) style de tableau si souhaitÃ©
->>>>>>> 9986ffe (feat(V3): Calibri 11 + page break + clear table (2025-08-26-4))
         try:
             dest_table.style = "Table Grid"
         except Exception:
@@ -243,9 +201,3 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
-
-
-
-
-
-
