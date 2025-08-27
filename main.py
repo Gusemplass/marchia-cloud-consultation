@@ -9,7 +9,7 @@ from docx.table import Table
 from docx.enum.text import WD_BREAK
 from docx.shared import Pt
 
-__VERSION__ = "2025-08-27-6"
+__VERSION__ = "2025-08-27-7"
 TEMPLATE_PATH = "templates/fiche_demo_MARCHIA_full.docx"
 
 app = FastAPI()
@@ -73,16 +73,24 @@ def zero_cell_spacing(table: Table):
                 pf.space_before = Pt(0)
                 pf.space_after = Pt(0)
 
-def cleanup_after_header(header_par: Paragraph, doc: Document) -> Optional[Table]:
+def _normalize(txt: str) -> str:
+    # retire NBSP et tabs pour détecter les faux "vides"
+    return txt.replace("\u00A0", " ").replace("\t", " ").strip()
+
+def cleanup_after_marker(marker_par: Paragraph, doc: Document) -> Optional[Table]:
     """
-    Après l'en-tête, supprime paragraphes vides et étiquettes individuelles
-    (📌Rép., 📐Dim., 🧩Typo., 🎯, 🏷, 🔧, 🧾) jusqu'au premier tableau ou un contenu utile.
+    Après le marqueur, supprime paragraphes vides (même NBSP)
+    et étiquettes individuelles (Rép./Dim./Typo./Perf./Qté/Pose/Commentaire, versions avec emojis).
+    S'arrête au premier tableau ou au premier vrai contenu.
     Retourne le premier tableau trouvé si présent.
     """
-    tokens = ["📌Rép.", "📐Dim.", "🧩Typo.", "🎯", "🏷", "🔧", "🧾"]
+    junk_prefixes = [
+        "📌Rép.", "📐Dim.", "🧩Typo.", "🎯", "🏷", "🔧", "🧾",
+        "Rép.", "Dim.", "Typo.", "Perf.", "Qté", "Pose", "Commentaire"
+    ]
     items = list(block_items(doc))
     try:
-        idx = next(i for i, it in enumerate(items) if isinstance(it, Paragraph) and it._p is header_par._p)
+        idx = next(i for i, it in enumerate(items) if isinstance(it, Paragraph) and it._p is marker_par._p)
     except StopIteration:
         return None
 
@@ -94,8 +102,8 @@ def cleanup_after_header(header_par: Paragraph, doc: Document) -> Optional[Table
             first_table = it
             break
         if isinstance(it, Paragraph):
-            txt = it.text.strip()
-            if txt == "" or any(txt.startswith(t) for t in tokens):
+            t = _normalize(it.text)
+            if (t == "") or any(t.startswith(p) for p in junk_prefixes):
                 remove_paragraph(it)
                 items.pop(j)
                 continue
@@ -134,39 +142,35 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
         if "{{lot}}" in p.text:
             p.text = p.text.replace("{{lot}}", req.lot)
 
-    # 4) Descriptif au marqueur (accepte [[...]] ou {{...}})
+    # 4) Descriptif au marqueur
     p_desc = find_paragraph(doc, ["[[DESCRIPTIF_CCTP]]", "{{DESCRIPTIF_CCTP}}"])
     if p_desc:
         p_desc.text = req.descriptif
 
-    # 5) Tableau quantitatif : en-tête + nettoyage + tableau en haut de page 2
+    # 5) Tableau quantitatif : PAS d'en-tête hors tableau, tableau tout en haut de la page 2
     p_tbl = find_paragraph(doc, ["[[TABLEAU_QUANTITATIF]]", "{{TABLEAU_QUANTITATIF}}"])
     if p_tbl and req.lignes:
-        header_text = "📌Rép. 📐Dim. 🧩Typo. 🎯 (Rw+Ctr/Uw) 🏷Qté 🔧pose (applique/réno/tableau/feuillure) 🧾Commentaire"
-
-        # 5a) Saut de page + transformation du marqueur en en-tête (une seule ligne)
+        # 5a) Marqueur -> saut de page (début de la page 2), pas d'en-tête texte ajouté
         p_tbl.text = ""
         run = p_tbl.add_run()
         run.add_break(WD_BREAK.PAGE)
-        run.add_text(header_text)
-        header_par = p_tbl
 
-        # 5b) Nettoyer ce qui suit immédiatement (étiquettes individuelles + vides)
-        existing_table = cleanup_after_header(header_par, doc)
+        # 5b) Nettoyer tout de suite ce qui traîne après le marqueur (étiquettes & vides)
+        existing_table = cleanup_after_marker(p_tbl, doc)
 
         headers = ["Rép.", "Dim.", "Typo.", "Perf. (Uw / Rw+Ctr)", "Qté", "Pose", "Commentaire"]
 
         if existing_table is None:
-            # 5c) Créer un tableau neuf et l'insérer immédiatement après l'en-tête
+            # 5c) Créer un tableau neuf et l'insérer immédiatement après le marqueur
             dest_table = doc.add_table(rows=1, cols=len(headers))
             hdr = dest_table.rows[0].cells
             for i, h in enumerate(headers):
                 hdr[i].text = h
-            header_par._p.addnext(dest_table._tbl)
+            p_tbl._p.addnext(dest_table._tbl)
         else:
-            # 5d) Repositionner le tableau immédiatement après l'en-tête & purger les anciennes lignes
+            # 5d) Repositionner le tableau immédiatement après le marqueur & le remettre à zéro
             dest_table = existing_table
-            move_table_after_paragraph(dest_table, header_par)
+            move_table_after_paragraph(dest_table, p_tbl)
             clear_table_body_keep_header(dest_table)
             hdr = dest_table.rows[0].cells
             for i, h in enumerate(headers[:len(hdr)]):
@@ -201,3 +205,30 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+cd "C:\Users\Marches\Desktop\marchia-cloud-consultation"# Vérif qu'il ne reste AUCUN marqueur de merge
+Select-String -Pattern '<<<<<<<|=======|>>>>>>>' -Path .\main.py
+
+# Commit & push
+git add main.py
+git commit -m "fix: remove outside header; hard-clean junk paragraphs; table at top of page 2 (2025-08-27-7)"
+git push --force-with-lease origin main
+
+# Rebuild & déploiement
+fly deploy --strategy immediate --no-cache
+
+# Vérif version
+Invoke-RestMethod https://marchia-cloud-consultation.fly.dev/ | ConvertTo-Json
+$URL = "https://marchia-cloud-consultation.fly.dev/genere-fiche"
+$json = @'
+{
+  "projet": "UNICIL - Bon Secours",
+  "moa": "UNICIL",
+  "lot": "Portes intérieures",
+  "descriptif": "Remplacement de 232 portes palières + 56 portes de gaines. Dépose/pose, accessoires, étanchéité, signalétique.",
+  "lignes": [
+    { "rep": "P1", "dim": "900x2040", "typo": "Porte palière EI30", "perf": "EI30, Rw+Ctr ≥ 35 dB", "qte": 232, "pose": "dépose totale + habillage", "commentaire": "Joint périphérique + seuil PMR" },
+    { "rep": "G1", "dim": "600x2000", "typo": "Porte de gaine EI30", "perf": "EI30", "qte": 56, "pose": "applique", "commentaire": "Signalétique incluse" },
+    { "rep": "P2", "dim": "900x2040", "typo": "Porte palière", "perf": "Rw+Ctr ≥ 35 dB", "qte": 10, "pose": "rénovation", "commentaire": "Logement témoin – contrôle réception" }
+  ]
+}
