@@ -9,7 +9,7 @@ from docx.table import Table
 from docx.enum.text import WD_BREAK
 from docx.shared import Pt
 
-__VERSION__ = "2025-08-27-9"
+__VERSION__ = "2025-08-27-13"
 TEMPLATE_PATH = "templates/fiche_demo_MARCHIA_full.docx"
 
 app = FastAPI()
@@ -134,6 +134,11 @@ def cleanup_after_marker(marker_par: Paragraph, doc: Document) -> Optional[Table
 def root():
     return {"message": "Marchia Cloud Consultation en ligne", "version": __VERSION__}
 
+# Healthcheck léger pour Fly.io / monitoring
+@app.get("/health")
+def health():
+    return {"ok": True, "version": __VERSION__}
+
 @app.post("/genere-fiche")
 def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|json)$")):
     if format == "json":
@@ -159,7 +164,7 @@ def genere_fiche(req: FicheRequest, format: str = Query("docx", pattern="^(docx|
         if "{{lot}}" in p.text:
             p.text = p.text.replace("{{lot}}", req.lot)
 
-    # 4) Descriptif au marqueur (accepte [[...]] ou {{...}})
+    # 4) Descriptif au marqueur
     p_desc = find_paragraph(doc, ["[[DESCRIPTIF_CCTP]]", "{{DESCRIPTIF_CCTP}}"])
     if p_desc:
         p_desc.text = req.descriptif
